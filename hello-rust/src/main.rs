@@ -1,11 +1,18 @@
 use ferris_says::say;
 use std::io::{stdout, BufWriter};
 
-fn main() {
-    let stdout = stdout();
-    let out = b"Hello fellow Rustaceans!";
-    let width = 24;
+use std::sync::mpsc as mpsc;
+use std::thread as thread;
 
+fn main() {
+    let (tx, rx) = mpsc::channel();
+    let tx2 = tx.clone();
+
+    thread::spawn(move || tx.send(" Hello "));
+    thread::spawn(move || tx2.send(" World "));
+
+    let stdout = stdout();
     let mut writer = BufWriter::new(stdout.lock());
-    say(out, width, &mut writer).unwrap();
+    say(rx.recv().unwrap().as_bytes(), 10, &mut writer).unwrap();
+    say(rx.recv().unwrap().as_bytes(), 10, &mut writer).unwrap();
 }
