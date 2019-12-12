@@ -1,5 +1,9 @@
 use ::std::collections::HashMap;
 use ::std::collections::HashSet;
+
+use std::sync::mpsc as mpsc;
+use std::thread as thread;
+
 mod input;
 
 fn split_and_convert(instruction: &str) -> (&str, i16) {
@@ -38,8 +42,14 @@ fn to_line_coordinates(coord_str: &str) -> HashMap<(i16, i16), i64> {
 }
 
 fn main() {
-    let wire_1 = to_line_coordinates(input::WIRE_1);
-    let wire_2 = to_line_coordinates(input::WIRE_2);
+    let (tx, rx) = mpsc::channel();
+    let tx2 = tx.clone();
+
+    thread::spawn(move || tx.send(to_line_coordinates(input::WIRE_1)));
+    thread::spawn(move || tx2.send(to_line_coordinates(input::WIRE_2)));
+
+    let wire_1 = rx.recv().unwrap();
+    let wire_2 = rx.recv().unwrap();
 
     let wire_coords_1: HashSet<(i16, i16)> = wire_1.keys().cloned().collect();
     let wire_coords_2: HashSet<(i16, i16)> = wire_2.keys().cloned().collect();
