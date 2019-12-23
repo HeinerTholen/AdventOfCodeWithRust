@@ -1,6 +1,5 @@
 use std::sync::mpsc;
 
-
 /// Intcode computer implementation from AdventOfCode 2019 puzzles.
 ///
 /// A detailed description is found in the puzzle descriptions:
@@ -113,7 +112,6 @@ impl IntCodeComputer {
     /// on only one thread, the channel must be filled before `compute` is called, as otherwise the
     /// computer will wait for input indefinitely.
 
-
     pub fn compute(&mut self, program: Vec<i32>) {
         self.program = program;
         self.i_pointer = 0;
@@ -209,7 +207,7 @@ mod tests {
     #[test]
     fn instruction_code_05() {
         // test program taken from https://adventofcode.com/2019/day/5
-        let program = [3,3,1105,-1,9,1101,0,0,12,4,12,99,1];
+        let program = [3, 3, 1105, -1, 9, 1101, 0, 0, 12, 4, 12, 99, 1];
         let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 
         tx_in.send(0).unwrap();
@@ -228,7 +226,7 @@ mod tests {
     #[test]
     fn instruction_code_06() {
         // test program taken from https://adventofcode.com/2019/day/5
-        let program = [3,12,6,12,15,1,13,14,13,4,13,99,-1,0,1,9];
+        let program = [3, 12, 6, 12, 15, 1, 13, 14, 13, 4, 13, 99, -1, 0, 1, 9];
         let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 
         tx_in.send(0).unwrap();
@@ -247,7 +245,7 @@ mod tests {
     #[test]
     fn instruction_code_07() {
         // test program taken from https://adventofcode.com/2019/day/5
-        let program = [3,9,7,9,10,9,4,9,99,-1,8];
+        let program = [3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8];
         let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 
         tx_in.send(0).unwrap();
@@ -266,7 +264,7 @@ mod tests {
     #[test]
     fn instruction_code_08() {
         // test program taken from https://adventofcode.com/2019/day/5
-        let program = [3,3,1108,-1,8,3,4,3,99];
+        let program = [3, 3, 1108, -1, 8, 3, 4, 3, 99];
         let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 
         tx_in.send(0).unwrap();
