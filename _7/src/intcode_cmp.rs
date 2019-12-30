@@ -11,38 +11,53 @@ use std::sync::mpsc;
 /// use intcode_cmp::IntCodeComputer;
 ///
 /// let program = [3,3,1105,-1,9,1101,0,0,12,4,12,99,1];
-/// let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 ///
-/// tx_in.send(0).unwrap();
-/// icc.compute(program.to_vec());
-/// let result = rx_out.recv().unwrap();
+/// let mut icc = IntCodeComputer::new(&program.to_vec());
+/// icc.input.send(0).unwrap();
+/// icc.compute();
+/// let result = icc.output.recv().unwrap();
 ///
 /// assert_eq!(0, result);
 /// ```
 #[derive(Debug)]
 pub struct IntCodeComputer {
+    pub input: mpsc::Sender<i32>,
+    pub output: mpsc::Receiver<i32>,
     program: Vec<i32>,
     i_pointer: usize,
     tx: mpsc::Sender<i32>,
     rx: mpsc::Receiver<i32>,
+    return_control: bool,
 }
 
 impl IntCodeComputer {
     /// Create a new Intcode computer.
     ///
-    /// Returns a tuple with the computer itself, an input- and an output channel.
-    ///
-    /// TODO find a more idiomatic way of providing the in- and output channels.
-    pub fn new() -> (IntCodeComputer, mpsc::Sender<i32>, mpsc::Receiver<i32>) {
+    /// * `program` - vector with program instructions and data
+    pub fn new(program: &Vec<i32>) -> IntCodeComputer {
         let (tx_in, rx_in) = mpsc::channel();
         let (tx_out, rx_out) = mpsc::channel();
         let icc = IntCodeComputer {
-            program: Vec::new(),
+            program: program.clone(),
             i_pointer: 0,
             tx: tx_out,
             rx: rx_in,
+            input: tx_in,
+            output: rx_out,
+            return_control: false,
         };
-        (icc, tx_in, rx_out)
+        icc
+    }
+
+    /// Set the `return_control option.
+    ///
+    /// * `what` - let computer return control to caller, if an empty input channel is hit.
+    pub fn set_return_control(&mut self, what: bool) {
+        self.return_control = what;
+    }
+
+    pub fn finished(&self) -> bool {
+        self.program[self.i_pointer] == 99
     }
 
     fn fetch_arg(&self, number: usize) -> i32 {
@@ -83,11 +98,21 @@ impl IntCodeComputer {
         self.i_pointer += 4;
     }
 
-    fn fetch_input(&mut self) {
-        let input_int = self.rx.recv().unwrap();
+    fn fetch_input(&mut self) -> bool {
+        let input_int;
+        if self.return_control {
+            let input = self.rx.try_recv();
+            if input.is_err() {
+                return false;
+            }
+            input_int = input.unwrap();
+        } else {
+            input_int = self.rx.recv().unwrap();
+        }
         let target = self.program[self.i_pointer + 1] as usize;
         self.program[target] = input_int;
         self.i_pointer += 2;
+        true
     }
 
     fn send_output(&mut self) {
@@ -108,19 +133,22 @@ impl IntCodeComputer {
 
     /// Run a program on the computer.
     ///
-    /// If the program expects an input, it must be supplied through the input channel. If running
-    /// on only one thread, the channel must be filled before `compute` is called, as otherwise the
-    /// computer will wait for input indefinitely.
-
-    pub fn compute(&mut self, program: Vec<i32>) {
-        self.program = program;
-        self.i_pointer = 0;
-
+    /// If the program expects an input, it must be supplied through the input channel. If no input
+    /// is found, either the computer will block until input is provided (if `return_control` was
+    /// initialized to `false`), or else control is returned to the caller. In the latter case,
+    /// the `compute` method may be called again after input is supplied, in order to start off
+    /// at the same point, where it was left.
+    pub fn compute(&mut self) {
         loop {
             match self.program[self.i_pointer] % 100 {
                 1 => self.handle_math_instr(|a, b| a + b),
                 2 => self.handle_math_instr(|a, b| a * b),
-                3 => self.fetch_input(),
+                3 => {
+                    if !self.fetch_input() {
+                        // if no input is present, control is returned to caller
+                        return;
+                    }
+                }
                 4 => self.send_output(),
                 5 => self.jump_if(true),
                 6 => self.jump_if(false),
@@ -184,99 +212,107 @@ mod tests {
 
     #[test]
     fn instruction_codes_01_02_03_04() {
-        let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
+        let mut icc = IntCodeComputer::new(&INTCODE_TEST_PROGRAM.to_vec());
 
         // Functionality of the computer is being tested by the test program. Every successful run
         // emits a zero at the end. The last output is the result for the first task in the
         // challenge.
         // https://adventofcode.com/2019/day/5
-        tx_in.send(1).unwrap();
-        icc.compute(INTCODE_TEST_PROGRAM.to_vec());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(0, rx_out.recv().unwrap());
-        assert_eq!(15314507, rx_out.recv().unwrap());
+        icc.input.send(1).unwrap();
+        icc.compute();
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(0, icc.output.recv().unwrap());
+        assert_eq!(15314507, icc.output.recv().unwrap());
     }
 
     #[test]
     fn instruction_code_05() {
         // test program taken from https://adventofcode.com/2019/day/5
         let program = [3, 3, 1105, -1, 9, 1101, 0, 0, 12, 4, 12, 99, 1];
-        let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 
-        tx_in.send(0).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(0, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(0).unwrap();
+        icc.compute();
+        assert_eq!(0, icc.output.recv().unwrap());
 
-        tx_in.send(-4).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(1, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(-4).unwrap();
+        icc.compute();
+        assert_eq!(1, icc.output.recv().unwrap());
 
-        tx_in.send(120).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(1, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(120).unwrap();
+        icc.compute();
+        assert_eq!(1, icc.output.recv().unwrap());
     }
 
     #[test]
     fn instruction_code_06() {
         // test program taken from https://adventofcode.com/2019/day/5
         let program = [3, 12, 6, 12, 15, 1, 13, 14, 13, 4, 13, 99, -1, 0, 1, 9];
-        let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 
-        tx_in.send(0).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(0, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(0).unwrap();
+        icc.compute();
+        assert_eq!(0, icc.output.recv().unwrap());
 
-        tx_in.send(-4).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(1, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(-4).unwrap();
+        icc.compute();
+        assert_eq!(1, icc.output.recv().unwrap());
 
-        tx_in.send(120).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(1, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(120).unwrap();
+        icc.compute();
+        assert_eq!(1, icc.output.recv().unwrap());
     }
 
     #[test]
     fn instruction_code_07() {
         // test program taken from https://adventofcode.com/2019/day/5
         let program = [3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8];
-        let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 
-        tx_in.send(0).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(1, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(0).unwrap();
+        icc.compute();
+        assert_eq!(1, icc.output.recv().unwrap());
 
-        tx_in.send(-4).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(1, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(-4).unwrap();
+        icc.compute();
+        assert_eq!(1, icc.output.recv().unwrap());
 
-        tx_in.send(120).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(0, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(120).unwrap();
+        icc.compute();
+        assert_eq!(0, icc.output.recv().unwrap());
     }
 
     #[test]
     fn instruction_code_08() {
         // test program taken from https://adventofcode.com/2019/day/5
         let program = [3, 3, 1108, -1, 8, 3, 4, 3, 99];
-        let (mut icc, tx_in, rx_out) = IntCodeComputer::new();
 
-        tx_in.send(0).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(0, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(0).unwrap();
+        icc.compute();
+        assert_eq!(0, icc.output.recv().unwrap());
 
-        tx_in.send(8).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(1, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(8).unwrap();
+        icc.compute();
+        assert_eq!(1, icc.output.recv().unwrap());
 
-        tx_in.send(120).unwrap();
-        icc.compute(program.to_vec());
-        assert_eq!(0, rx_out.recv().unwrap());
+        let mut icc = IntCodeComputer::new(&program.to_vec());
+        icc.input.send(120).unwrap();
+        icc.compute();
+        assert_eq!(0, icc.output.recv().unwrap());
     }
 }
