@@ -1,3 +1,9 @@
+/// Solution to puzzle 8 in AdventOfCode 2019
+/// https://adventofcode.com/2019/day/8
+///
+/// First time using some meaningful error handling with rust!
+/// https://blog.burntsushi.net/rust-error-handling/
+
 #[macro_use(c)]
 extern crate cute;
 
@@ -9,6 +15,7 @@ pub struct Layer {
     pub pixels: Vec<Vec<u32>>,
 }
 
+/// Layer for SpaceImage
 impl fmt::Debug for Layer {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut tmp: String = "".to_string();
@@ -21,12 +28,16 @@ impl fmt::Debug for Layer {
 }
 
 impl Layer {
+    /// calculate how often a number (e.g. 0, 1, 2, ...) occurs on a layer
+    ///
+    /// * `num` - number to be counted
     pub fn n_nums_in_layer(&self, num: u32) -> usize {
         // nice to have list comprehension in rust, although in this case it is not optimally used
         // as it instanciates a vector, which is not needed for just counting numbers
         (c!(*p, for p in l, for l in &self.pixels, if *p == num)).len() as usize
     }
 
+    /// convert layer into a printable string for display
     pub fn printable(&self) -> String {
         let mut tmp = format!("{:?}", self);
         tmp = tmp.replace("0", " ");
@@ -43,14 +54,23 @@ pub struct SpaceImage {
 }
 
 impl SpaceImage {
-    pub fn from_str_input(width: usize, height: usize, input_str: &str) -> SpaceImage {
+    /// construct SpaceImage from a string
+    ///
+    /// Returns error if:
+    /// - the layer size is not a divider of the input length
+    /// - a non-digit is found in the input string
+    pub fn from_str_input(
+        width: usize,
+        height: usize,
+        input_str: &str,
+    ) -> Result<SpaceImage, String> {
         let n_pixels_per_layer = width * height;
         if input_str.len() % n_pixels_per_layer != 0 {
-            panic!(
+            return Err(format!(
                 "Layer size ({}) is not a divider of input size ({})!",
                 input_str.len(),
                 width * height
-            );
+            ));
         }
 
         let n_layers = input_str.len() / n_pixels_per_layer;
@@ -71,17 +91,23 @@ impl SpaceImage {
                 let mut line = Vec::with_capacity(width);
                 for j in 0..width {
                     let index = l * n_pixels_per_layer + i * width + j;
-                    let pixel = (input_bytes[index] as char).to_digit(10).unwrap();
-                    line.push(pixel);
+                    let pixel = (input_bytes[index] as char).to_digit(10);
+                    if pixel.is_none() {
+                        return Err(format!("Error converting input at index {}", index));
+                    }
+                    line.push(pixel.unwrap());
                 }
                 layer.pixels.push(line);
             }
             si.layers.push(layer);
         }
 
-        si
+        Ok(si)
     }
 
+    /// project all layers image layers into one layer
+    ///
+    /// Pixels with value 2 are considered transparent, the top-most color pixel is taken.
     pub fn merge_down(&self) -> Layer {
         let mut lines = Vec::with_capacity(self.height);
         for i in 0..self.height {
@@ -111,10 +137,10 @@ fn main() {
     // times number of 2's?
 
     let test = "123456789012";
-    let test_img = SpaceImage::from_str_input(3, 2, test);
+    let test_img = SpaceImage::from_str_input(3, 2, test).unwrap();
     println!("TEST PRINT! {:?}", test_img);
 
-    let img = SpaceImage::from_str_input(25, 6, input::PROGRAM_INPUT);
+    let img = SpaceImage::from_str_input(25, 6, input::PROGRAM_INPUT).unwrap();
 
     let (_, layer_with_fewest_zeros) = (0..img.layers.len())
         .map(|i| (img.layers[i].n_nums_in_layer(0), i))
@@ -125,8 +151,9 @@ fn main() {
 
     println!("Task 1 result: {:?}", num_1s * num_2s);
 
+    // task 2: merge pixels and print message
     let test = "0222112222120000";
-    let test_img = SpaceImage::from_str_input(2, 2, test);
+    let test_img = SpaceImage::from_str_input(2, 2, test).unwrap();
     println!("TEST PRINT! {:?}", test_img.merge_down());
 
     println!("Task 1 result: {:}", img.merge_down().printable());
