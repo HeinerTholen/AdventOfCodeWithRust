@@ -8,6 +8,7 @@
 extern crate cute;
 
 use std::fmt;
+use std::io::{Error, ErrorKind};
 
 mod input;
 
@@ -63,14 +64,17 @@ impl SpaceImage {
         width: usize,
         height: usize,
         input_str: &str,
-    ) -> Result<SpaceImage, String> {
+    ) -> Result<SpaceImage, Box<Error>> {
         let n_pixels_per_layer = width * height;
         if input_str.len() % n_pixels_per_layer != 0 {
-            return Err(format!(
-                "Layer size ({}) is not a divider of input size ({})!",
-                input_str.len(),
-                width * height
-            ));
+            return Err(Box::new(Error::new(
+                ErrorKind::Other,
+                format!(
+                    "Layer size ({}) is not a divider of input size ({})!",
+                    input_str.len(),
+                    width * height
+                ),
+            )));
         }
 
         let n_layers = input_str.len() / n_pixels_per_layer;
@@ -93,7 +97,10 @@ impl SpaceImage {
                     let index = l * n_pixels_per_layer + i * width + j;
                     let pixel = (input_bytes[index] as char).to_digit(10);
                     if pixel.is_none() {
-                        return Err(format!("Error converting input at index {}", index));
+                        return Err(Box::new(Error::new(
+                            ErrorKind::Other,
+                            format!("Error converting input at index {}", index),
+                        )));
                     }
                     line.push(pixel.unwrap());
                 }
